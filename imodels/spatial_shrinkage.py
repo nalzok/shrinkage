@@ -8,7 +8,6 @@ from sklearn.metrics import r2_score
 from sklearn.model_selection import cross_val_score
 from sklearn.model_selection import train_test_split
 from sklearn.tree import DecisionTreeRegressor, DecisionTreeClassifier, export_text
-from sklearn.ensemble import GradientBoostingClassifier
 
 from imodels.util import check_is_fitted, compute_tree_complexity
 
@@ -49,10 +48,10 @@ class SSTree:
 
     def get_params(self, deep=True):
         params = {
-                    "reg_param": self.reg_param,
-                    "estimator_": self.estimator_,
-                    "fast": self.fast,
-                }
+            "reg_param": self.reg_param,
+            "estimator_": self.estimator_,
+            "fast": self.fast,
+        }
         if deep:
             return deepcopy(params)
         else:
@@ -87,11 +86,6 @@ class SSTree:
 
         tree = estimator.tree_
 
-        # is_leaf = tree.children_left == tree.children_right
-        # identity = tree.value[is_leaf]
-        # regularizer = np.average(tree.value[is_leaf], axis=0, weights=tree.n_node_samples[is_leaf])
-        # tree.value[is_leaf] = identity * (1-reg_param) + regularizer * reg_param
-
         value = np.copy(tree.value)
 
         stack = [(0, 1.0, np.zeros_like(tree.value[0]))]
@@ -106,28 +100,43 @@ class SSTree:
             samples = tree.n_node_samples[node]
             for i, primary in enumerate((left, right)):
                 primary_samples = tree.n_node_samples[primary]
-                primary_weight = weight * (samples**2 + primary_samples*reg_param)/(samples**2 + samples*reg_param)
+                primary_weight = (
+                    weight
+                    * (samples**2 + primary_samples * reg_param)
+                    / (samples**2 + samples * reg_param)
+                )
 
                 secondary = right if i == 0 else left
                 secondary_left = tree.children_left[secondary]
                 secondary_right = tree.children_right[secondary]
                 secondary_samples = tree.n_node_samples[secondary]
 
-                if self.fast or secondary_left == secondary_right == -1 or tree.feature[secondary] != tree.feature[primary]:
+                if (
+                    self.fast
+                    or secondary_left == secondary_right == -1
+                    or tree.feature[secondary] != tree.feature[primary]
+                ):
                     secondary_value = tree.value[secondary]
                 else:
                     secondary_primary = secondary_right if i == 0 else secondary_left
                     secondary_primary_samples = tree.n_node_samples[secondary_primary]
-                    secondary_primary_weight = (secondary_samples**2 + secondary_primary_samples*reg_param)/(secondary_samples**2 + secondary_samples*reg_param)
+                    secondary_primary_weight = (
+                        secondary_samples**2 + secondary_primary_samples * reg_param
+                    ) / (secondary_samples**2 + secondary_samples * reg_param)
 
                     secondary_secondary = secondary_left if i == 0 else secondary_right
-                    secondary_value = secondary_primary_weight * tree.value[secondary_primary] + (1-secondary_primary_weight) * tree.value[secondary_secondary]
+                    secondary_value = (
+                        secondary_primary_weight * tree.value[secondary_primary]
+                        + (1 - secondary_primary_weight)
+                        * tree.value[secondary_secondary]
+                    )
 
-                primary_background = background + (weight-primary_weight) * secondary_value
+                primary_background = (
+                    background + (weight - primary_weight) * secondary_value
+                )
                 stack.append((primary, primary_weight, primary_background))
 
         tree.value[:] = value
-            
 
     def _shrink(self):
         if hasattr(self.estimator_, "tree_"):
