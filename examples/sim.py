@@ -23,8 +23,8 @@ cy = "#d8b365"
 cg = "#5ab4ac"
 
 
-def plot_sim(n=50, std=1, reg_param=0, linear_data=False, return_curves=False):
-    np.random.seed(13)
+def plot_sim(n, std, linear_data, reg_param, fast):
+    np.random.seed(42)
 
     if linear_data:
 
@@ -54,7 +54,7 @@ def plot_sim(n=50, std=1, reg_param=0, linear_data=False, return_curves=False):
     m1.fit(X.reshape(-1, 1), y)
     y_pred_dt = m1.predict(X_tile.reshape(-1, 1))
 
-    mshrunk = SSTreeRegressor(deepcopy(m1), reg_param=reg_param)
+    mshrunk = SSTreeRegressor(deepcopy(m1), reg_param=reg_param, fast=fast)
     y_pred_shrunk = mshrunk.predict(X_tile.reshape(-1, 1))
 
     plt.plot(X, y, "o", color="black", ms=4, alpha=0.5, markeredgewidth=0)
@@ -65,15 +65,21 @@ def plot_sim(n=50, std=1, reg_param=0, linear_data=False, return_curves=False):
     plt.ylabel("Y")
     dvu.line_legend(adjust_text_labels=False)
 
-    if return_curves:
-        return X, y, X_tile, y_tile, y_pred_dt, y_pred_shrunk
+    return X, y, X_tile, y_tile, y_pred_dt, y_pred_shrunk
 
 
-plot_sim(n=400, std=1, reg_param=100)
-plt.savefig("figs/intro_indicators.pdf")
+plot_sim(400, 1, False, 100, True)
+plt.savefig("figs/intro_indicators_fast.pdf")
 plt.close()
 
+plot_sim(400, 1, False, 100, False)
+plt.savefig("figs/intro_indicators_slow.pdf")
+plt.close()
 
-plot_sim(n=400, std=1, reg_param=50, linear_data=True)
-plt.savefig("figs/intro_linear.pdf")
+plot_sim(400, 1, True, 50, True)
+plt.savefig("figs/intro_linear_fast.pdf")
+plt.close()
+
+plot_sim(400, 1, True, 50, False)
+plt.savefig("figs/intro_linear_slow.pdf")
 plt.close()

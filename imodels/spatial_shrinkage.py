@@ -86,57 +86,74 @@ class SSTree:
 
         tree = estimator.tree_
 
+        if isinstance(self, ClassifierMixin):
+            tree.value[:] /= np.sum(tree.value, axis=-1, keepdims=True)
         value = np.copy(tree.value)
 
-        stack = [(0, 1.0, np.zeros_like(tree.value[0]))]
+        #               _________ parent ___________
+        #              /                            \
+        #          __node__                 _____sibling_____
+        #         /        \               /                 \
+        #     primary   secondary   sibling_primary   subling_secondary
+
+        stack = [(0, 1.0, None, None, None, None, 0)]
         while stack:
-            node, weight, background = stack.pop()
-            left = tree.children_left[node]
-            right = tree.children_right[node]
-            if left == right == -1:
+            node, weight, is_left, sibling, parent_samples, parent_feature, background = stack.pop()
+            if self._is_leaf(tree, node):
                 value[node] = tree.value[node] * weight + background
                 continue
 
-            samples = tree.n_node_samples[node]
-            for i, primary in enumerate((left, right)):
-                primary_samples = tree.n_node_samples[primary]
-                primary_weight = (
-                    weight
-                    * (samples**2 + primary_samples * reg_param)
-                    / (samples**2 + samples * reg_param)
-                )
+            node_samples = tree.n_node_samples[node]
+            node_feature = tree.feature[node]
+            node_left = tree.children_left[node]
+            node_right = tree.children_right[node]
 
-                secondary = right if i == 0 else left
-                secondary_left = tree.children_left[secondary]
-                secondary_right = tree.children_right[secondary]
-                secondary_samples = tree.n_node_samples[secondary]
+            if is_left is None or sibling is None or parent_samples is None or parent_feature is None:
+                stack.append((node_left, weight, True, node_right, node_samples, node_feature, background))
+                stack.append((node_right, weight, False, node_left, node_samples, node_feature, background))
+                continue
 
-                if (
-                    self.fast
-                    or secondary_left == secondary_right == -1
-                    or tree.feature[secondary] != tree.feature[primary]
-                ):
-                    secondary_value = tree.value[secondary]
+            node_weight = (parent_samples**2 + node_samples * reg_param) / (
+                parent_samples**2 + parent_samples * reg_param
+            )
+
+            if self.fast or self._is_leaf(tree, sibling):
+                sibling_value = tree.value[sibling]
+                spinoff = weight * (1 - node_weight) * sibling_value
+
+                stack.append((node_left, weight * node_weight, True, node_right, node_samples, node_feature, background + spinoff))
+                stack.append((node_right, weight * node_weight, False, node_left, node_samples, node_feature, background + spinoff))
+                continue
+
+            sibling_feature = tree.feature[sibling]
+            for child_is_left, child, child_sibling in ((True, node_left, node_right), (False, node_right, node_left)):
+                if node_feature == sibling_feature != parent_feature:
+                    signal = child_is_left
                 else:
-                    secondary_primary = secondary_right if i == 0 else secondary_left
-                    secondary_primary_samples = tree.n_node_samples[secondary_primary]
-                    secondary_primary_weight = (
-                        secondary_samples**2 + secondary_primary_samples * reg_param
-                    ) / (secondary_samples**2 + secondary_samples * reg_param)
+                    signal = is_left
 
-                    secondary_secondary = secondary_left if i == 0 else secondary_right
-                    secondary_value = (
-                        secondary_primary_weight * tree.value[secondary_primary]
-                        + (1 - secondary_primary_weight)
-                        * tree.value[secondary_secondary]
-                    )
+                if signal:
+                    sibling_primary = tree.children_left[sibling]
+                    sibling_secondary = tree.children_right[sibling]
+                else:
+                    sibling_primary = tree.children_right[sibling]
+                    sibling_secondary = tree.children_left[sibling]
 
-                primary_background = (
-                    background + (weight - primary_weight) * secondary_value
-                )
-                stack.append((primary, primary_weight, primary_background))
+                sibling_samples = tree.n_node_samples[sibling]
+                sibling_primary_samples = tree.n_node_samples[sibling_primary]
+                sibling_primary_weight = (
+                    sibling_samples**2 + sibling_primary_samples * reg_param
+                ) / (sibling_samples**2 + sibling_samples * reg_param)
+                sibling_value = sibling_primary_weight * tree.value[sibling_primary] + (1 - sibling_primary_weight) * tree.value[sibling_secondary]
+
+                spinoff = weight * (1 - node_weight) * sibling_value
+
+                stack.append((child, weight * node_weight, child_is_left, child_sibling, node_samples, node_feature, background + spinoff))
 
         tree.value[:] = value
+
+    def _is_leaf(self, tree, node):
+        return tree.children_left[node] == tree.children_right[node] == -1
 
     def _shrink(self):
         if hasattr(self.estimator_, "tree_"):
