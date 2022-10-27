@@ -98,7 +98,15 @@ class SSTree:
 
         stack = [(0, 1.0, None, None, None, None, 0)]
         while stack:
-            node, weight, is_left, sibling, parent_samples, parent_feature, background = stack.pop()
+            (
+                node,
+                weight,
+                is_left,
+                sibling,
+                parent_samples,
+                parent_feature,
+                background,
+            ) = stack.pop()
             if self._is_leaf(tree, node):
                 value[node] = tree.value[node] * weight + background
                 continue
@@ -108,9 +116,34 @@ class SSTree:
             node_left = tree.children_left[node]
             node_right = tree.children_right[node]
 
-            if is_left is None or sibling is None or parent_samples is None or parent_feature is None:
-                stack.append((node_left, weight, True, node_right, node_samples, node_feature, background))
-                stack.append((node_right, weight, False, node_left, node_samples, node_feature, background))
+            if (
+                is_left is None
+                or sibling is None
+                or parent_samples is None
+                or parent_feature is None
+            ):
+                stack.append(
+                    (
+                        node_left,
+                        weight,
+                        True,
+                        node_right,
+                        node_samples,
+                        node_feature,
+                        background,
+                    )
+                )
+                stack.append(
+                    (
+                        node_right,
+                        weight,
+                        False,
+                        node_left,
+                        node_samples,
+                        node_feature,
+                        background,
+                    )
+                )
                 continue
 
             node_weight = (parent_samples**2 + node_samples * reg_param) / (
@@ -121,12 +154,35 @@ class SSTree:
                 sibling_value = tree.value[sibling]
                 spinoff = weight * (1 - node_weight) * sibling_value
 
-                stack.append((node_left, weight * node_weight, True, node_right, node_samples, node_feature, background + spinoff))
-                stack.append((node_right, weight * node_weight, False, node_left, node_samples, node_feature, background + spinoff))
+                stack.append(
+                    (
+                        node_left,
+                        weight * node_weight,
+                        True,
+                        node_right,
+                        node_samples,
+                        node_feature,
+                        background + spinoff,
+                    )
+                )
+                stack.append(
+                    (
+                        node_right,
+                        weight * node_weight,
+                        False,
+                        node_left,
+                        node_samples,
+                        node_feature,
+                        background + spinoff,
+                    )
+                )
                 continue
 
             sibling_feature = tree.feature[sibling]
-            for child_is_left, child, child_sibling in ((True, node_left, node_right), (False, node_right, node_left)):
+            for child_is_left, child, child_sibling in (
+                (True, node_left, node_right),
+                (False, node_right, node_left),
+            ):
                 if node_feature == sibling_feature != parent_feature:
                     signal = child_is_left
                 else:
@@ -144,11 +200,24 @@ class SSTree:
                 sibling_primary_weight = (
                     sibling_samples**2 + sibling_primary_samples * reg_param
                 ) / (sibling_samples**2 + sibling_samples * reg_param)
-                sibling_value = sibling_primary_weight * tree.value[sibling_primary] + (1 - sibling_primary_weight) * tree.value[sibling_secondary]
+                sibling_value = (
+                    sibling_primary_weight * tree.value[sibling_primary]
+                    + (1 - sibling_primary_weight) * tree.value[sibling_secondary]
+                )
 
                 spinoff = weight * (1 - node_weight) * sibling_value
 
-                stack.append((child, weight * node_weight, child_is_left, child_sibling, node_samples, node_feature, background + spinoff))
+                stack.append(
+                    (
+                        child,
+                        weight * node_weight,
+                        child_is_left,
+                        child_sibling,
+                        node_samples,
+                        node_feature,
+                        background + spinoff,
+                    )
+                )
 
         tree.value[:] = value
 
