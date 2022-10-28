@@ -142,17 +142,21 @@ class SSTree:
                     sibling_weight_multiplier,
                     sibling_ancestor_feature,
                 ) in sibling_list:
-                    # absorbs sibling into background
-                    if self.fast or self._is_leaf(tree, sibling):
+                    sibling_feature = tree.feature[sibling]
+                    if (
+                        self.fast
+                        or self._is_leaf(tree, sibling)
+                        or node_feature != sibling_feature != sibling_ancestor_feature
+                    ):
                         spinoff += sibling_weight_multiplier * tree.value[sibling]
                         continue
 
-                    # absorbs secondary part of sibling into background
-                    sibling_feature = tree.feature[sibling]
-                    if sibling_feature == node_feature != sibling_ancestor_feature:
+                    if sibling_feature == sibling_ancestor_feature:
+                        signal = sibling_on_right
+                    elif sibling_feature == node_feature:
                         signal = child_sibling_on_right
                     else:
-                        signal = sibling_on_right
+                        raise Exception("Unreachable")
 
                     if signal:
                         sibling_primary = tree.children_left[sibling]
