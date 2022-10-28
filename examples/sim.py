@@ -29,13 +29,13 @@ def plot_sim(n, std, linear_data, reg_param, fast):
     if linear_data:
 
         def gt_func(X):
-            return X
+            return 42 + X
 
     else:
 
         def gt_func(X):
-            return (
-                +1 * (X < 2) * (X < 1)
+            return 42 + (
+                + 1 * (X < 2) * (X < 1)
                 + -0 * (X < 2) * (X > 1)
                 + +1 * (X >= 2) * (X < 3)
                 + +0 * (X >= 2) * (X > 3)
@@ -68,18 +68,22 @@ def plot_sim(n, std, linear_data, reg_param, fast):
     return X, y, X_tile, y_tile, y_pred_dt, y_pred_shrunk
 
 
-plot_sim(400, 1, False, 100, True)
+n = 400
+reg_param_indicators = 100
+reg_param_linear = 50
+
+plot_sim(n, 1, False, reg_param_indicators, True)
 plt.savefig("figs/intro_indicators_fast.pdf")
 plt.close()
 
-plot_sim(400, 1, False, 100, False)
+plot_sim(n, 1, False, reg_param_indicators, False)
 plt.savefig("figs/intro_indicators_slow.pdf")
 plt.close()
 
-plot_sim(400, 1, True, 50, True)
+plot_sim(n, 1, True, reg_param_indicators, True)
 plt.savefig("figs/intro_linear_fast.pdf")
 plt.close()
 
-plot_sim(400, 1, True, 50, False)
+plot_sim(n, 1, True, reg_param_linear, False)
 plt.savefig("figs/intro_linear_slow.pdf")
 plt.close()

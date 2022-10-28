@@ -90,131 +90,99 @@ class SSTree:
             tree.value[:] /= np.sum(tree.value, axis=-1, keepdims=True)
         value = np.copy(tree.value)
 
-        #               _________ parent ___________
-        #              /                            \
-        #          __node__                 _____sibling_____
-        #         /        \               /                 \
-        #     primary   secondary   sibling_primary   subling_secondary
+        root = 0
+        root_left = tree.children_left[root]
+        root_right = tree.children_right[root]
+        if root_left == root_right == -1:
+            return
 
-        stack = [(0, 1.0, None, None, None, None, 0)]
+        stack = []
+        root_samples = tree.n_node_samples[root]
+        root_feature = tree.feature[root]
+        for node, sibling, sibling_on_right in (
+            (root_left, root_right, True),
+            (root_right, root_left, False),
+        ):
+            node_samples = tree.n_node_samples[node]
+            node_weight = (root_samples**2 + node_samples * reg_param) / (
+                root_samples**2 + root_samples * reg_param
+            )
+            sibling_list = [(sibling, sibling_on_right, 1 - node_weight, root_feature)]
+            stack.append((node, node_weight, sibling_list, 0))
+
         while stack:
             (
                 node,
-                weight,
-                is_left,
-                sibling,
-                parent_samples,
-                parent_feature,
+                node_weight_multiplier,
+                sibling_list,
                 background,
             ) = stack.pop()
+            node_samples = tree.n_node_samples[node]
             if self._is_leaf(tree, node):
-                value[node] = tree.value[node] * weight + background
+                value[node] = node_weight_multiplier * tree.value[node]
+                for sibling, _, sibling_weight_multiplier, _ in sibling_list:
+                    value[node] += sibling_weight_multiplier * tree.value[sibling]
+                value[node] += background
+
                 continue
 
-            node_samples = tree.n_node_samples[node]
             node_feature = tree.feature[node]
             node_left = tree.children_left[node]
             node_right = tree.children_right[node]
 
-            if (
-                is_left is None
-                or sibling is None
-                or parent_samples is None
-                or parent_feature is None
+            for child, child_sibling, child_sibling_on_right in (
+                (node_left, node_right, True),
+                (node_right, node_left, False),
             ):
-                stack.append(
-                    (
-                        node_left,
-                        weight,
-                        True,
-                        node_right,
-                        node_samples,
-                        node_feature,
-                        background,
-                    )
-                )
-                stack.append(
-                    (
-                        node_right,
-                        weight,
-                        False,
-                        node_left,
-                        node_samples,
-                        node_feature,
-                        background,
-                    )
-                )
-                continue
+                spinoff = 0
+                child_sibling_list = []
+                for sibling, sibling_on_right, sibling_weight_multiplier, sibling_ancestor_feature in sibling_list:
+                    # absorbs sibling into background
+                    if self.fast or self._is_leaf(tree, sibling):
+                        spinoff += sibling_weight_multiplier * tree.value[sibling]
+                        continue
 
-            node_weight = (parent_samples**2 + node_samples * reg_param) / (
-                parent_samples**2 + parent_samples * reg_param
-            )
+                    # absorbs secondary part of sibling into background
+                    sibling_feature = tree.feature[sibling]
+                    if sibling_feature == node_feature != sibling_ancestor_feature:
+                        signal = child_sibling_on_right
+                    else:
+                        signal = sibling_on_right
 
-            if self.fast or self._is_leaf(tree, sibling):
-                sibling_value = tree.value[sibling]
-                spinoff = weight * (1 - node_weight) * sibling_value
+                    if signal:
+                        sibling_primary = tree.children_left[sibling]
+                        sibling_secondary = tree.children_right[sibling]
+                    else:
+                        sibling_primary = tree.children_right[sibling]
+                        sibling_secondary = tree.children_left[sibling]
 
-                stack.append(
-                    (
-                        node_left,
-                        weight * node_weight,
-                        True,
-                        node_right,
-                        node_samples,
-                        node_feature,
-                        background + spinoff,
-                    )
+                    sibling_samples = tree.n_node_samples[sibling]
+                    sibling_primary_samples = tree.n_node_samples[sibling_primary]
+                    sibling_primary_weight = (
+                        sibling_samples**2 + sibling_primary_samples * reg_param
+                    ) / (sibling_samples**2 + sibling_samples * reg_param)
+                    if self.fast:
+                        spinoff += sibling_weight_multiplier * sibling_primary_weight * tree.value[sibling_primary]
+                        spinoff += sibling_weight_multiplier * (1 - sibling_primary_weight) * tree.value[sibling_secondary]
+                    else:
+                        child_sibling_list.append((sibling_primary, sibling_on_right, sibling_weight_multiplier * sibling_primary_weight, sibling_ancestor_feature))
+                        child_sibling_list.append((sibling_secondary, sibling_on_right, sibling_weight_multiplier * (1 - sibling_primary_weight), sibling_ancestor_feature))
+
+                child_samples = tree.n_node_samples[child]
+                child_weight = (node_samples**2 + child_samples * reg_param) / (
+                    node_samples**2 + node_samples * reg_param
                 )
-                stack.append(
-                    (
-                        node_right,
-                        weight * node_weight,
-                        False,
-                        node_left,
-                        node_samples,
-                        node_feature,
-                        background + spinoff,
-                    )
-                )
-                continue
-
-            sibling_feature = tree.feature[sibling]
-            for child_is_left, child, child_sibling in (
-                (True, node_left, node_right),
-                (False, node_right, node_left),
-            ):
-                if node_feature == sibling_feature != parent_feature:
-                    signal = child_is_left
+                if self.fast:
+                    spinoff += node_weight_multiplier * (1 - child_weight) * tree.value[child_sibling]
                 else:
-                    signal = is_left
-
-                if signal:
-                    sibling_primary = tree.children_left[sibling]
-                    sibling_secondary = tree.children_right[sibling]
-                else:
-                    sibling_primary = tree.children_right[sibling]
-                    sibling_secondary = tree.children_left[sibling]
-
-                sibling_samples = tree.n_node_samples[sibling]
-                sibling_primary_samples = tree.n_node_samples[sibling_primary]
-                sibling_primary_weight = (
-                    sibling_samples**2 + sibling_primary_samples * reg_param
-                ) / (sibling_samples**2 + sibling_samples * reg_param)
-                sibling_value = (
-                    sibling_primary_weight * tree.value[sibling_primary]
-                    + (1 - sibling_primary_weight) * tree.value[sibling_secondary]
-                )
-
-                spinoff = weight * (1 - node_weight) * sibling_value
+                    # create new siblings
+                    child_sibling_list.append((child_sibling, child_sibling_on_right, node_weight_multiplier * (1 - child_weight), node_feature))
 
                 stack.append(
                     (
                         child,
-                        weight * node_weight,
-                        child_is_left,
-                        child_sibling,
-                        node_samples,
-                        node_feature,
+                        node_weight_multiplier * child_weight,
+                        child_sibling_list,
                         background + spinoff,
                     )
                 )

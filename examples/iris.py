@@ -57,10 +57,12 @@ def plot_boundary(reg_param, fast):
     _ = plt.axis("tight")
 
 
-plot_boundary(1, True)
+reg_param = 50
+
+plot_boundary(reg_param, True)
 plt.savefig("figs/iris_fast.pdf")
 plt.close()
 
-plot_boundary(1, False)
+plot_boundary(reg_param, False)
 plt.savefig("figs/iris_slow.pdf")
 plt.close()
