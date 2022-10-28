@@ -35,7 +35,7 @@ def plot_sim(n, std, linear_data, reg_param, fast):
 
         def gt_func(X):
             return 42 + (
-                + 1 * (X < 2) * (X < 1)
+                +1 * (X < 2) * (X < 1)
                 + -0 * (X < 2) * (X > 1)
                 + +1 * (X >= 2) * (X < 3)
                 + +0 * (X >= 2) * (X > 3)
