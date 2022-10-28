@@ -23,7 +23,7 @@ cy = "#d8b365"
 cg = "#5ab4ac"
 
 
-def plot_sim(n, std, linear_data, reg_param, fast):
+def plot_sim(n, std, linear_data, reg_param, shrinkage_scheme):
     np.random.seed(42)
 
     if linear_data:
@@ -54,7 +54,7 @@ def plot_sim(n, std, linear_data, reg_param, fast):
     m1.fit(X.reshape(-1, 1), y)
     y_pred_dt = m1.predict(X_tile.reshape(-1, 1))
 
-    mshrunk = SSTreeRegressor(deepcopy(m1), reg_param=reg_param, fast=fast)
+    mshrunk = SSTreeRegressor(deepcopy(m1), reg_param=reg_param, shrinkage_scheme=shrinkage_scheme)
     y_pred_shrunk = mshrunk.predict(X_tile.reshape(-1, 1))
 
     plt.plot(X, y, "o", color="black", ms=4, alpha=0.5, markeredgewidth=0)
@@ -72,18 +72,18 @@ n = 400
 reg_param_indicators = 100
 reg_param_linear = 50
 
-plot_sim(n, 1, False, reg_param_indicators, True)
-plt.savefig("figs/intro_indicators_fast.pdf")
+plot_sim(n, 1, False, reg_param_indicators, "coarse")
+plt.savefig("figs/intro_indicators_coarse.pdf")
 plt.close()
 
-plot_sim(n, 1, False, reg_param_indicators, False)
-plt.savefig("figs/intro_indicators_slow.pdf")
+plot_sim(n, 1, False, reg_param_indicators, "fine")
+plt.savefig("figs/intro_indicators_fine.pdf")
 plt.close()
 
-plot_sim(n, 1, True, reg_param_indicators, True)
-plt.savefig("figs/intro_linear_fast.pdf")
+plot_sim(n, 1, True, reg_param_indicators, "coarse")
+plt.savefig("figs/intro_linear_coarse.pdf")
 plt.close()
 
-plot_sim(n, 1, True, reg_param_linear, False)
-plt.savefig("figs/intro_linear_slow.pdf")
+plot_sim(n, 1, True, reg_param_linear, "fine")
+plt.savefig("figs/intro_linear_fine.pdf")
 plt.close()

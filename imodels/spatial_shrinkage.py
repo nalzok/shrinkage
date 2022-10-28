@@ -1,5 +1,5 @@
 from copy import deepcopy
-from typing import Sequence, Optional
+from typing import Sequence, Optional, Union, Literal
 
 import numpy as np
 from sklearn import datasets
@@ -17,7 +17,7 @@ class SSTree:
         self,
         estimator_: Optional[BaseEstimator] = None,
         reg_param: float = 1,
-        fast: bool = False,
+        shrinkage_scheme: Union[Literal["coarse"], Literal["fine"]] = "coarse",
     ):
         """(Tree with spatial shrinkage applied).
         Spatial shinkage is an extremely fast post-hoc regularization method which works on any decision tree (or tree-based ensemble, such as Random Forest).
@@ -32,17 +32,19 @@ class SSTree:
         reg_param: float
             Higher is more regularization (can be arbitrarily large, should not be < 0)
 
-        fast: bool
+        shrinkage_scheme: str
             Experimental: Used to experiment with different forms of shrinkage. options are:
-                (i) True shrinks based on siblings only
-                (ii) False shrinks based on all nodes
+                (i) "coarse" shrinks based on the current node
+                (ii) "fine" shrinks based on all siblings
         """
         super().__init__()
         if estimator_ is None:
             estimator_ = DecisionTreeClassifier(max_leaf_nodes=20)
-        self.reg_param = reg_param
         self.estimator_ = estimator_
-        self.fast = fast
+        self.reg_param = reg_param
+        if shrinkage_scheme not in {"coarse", "fine"}:
+            raise ValueError("Unknown shrinkage scheme {shrinkage_scheme}")
+        self.shrinkage_scheme = shrinkage_scheme
         if check_is_fitted(self.estimator_):
             self._shrink()
 
@@ -50,7 +52,7 @@ class SSTree:
         params = {
             "reg_param": self.reg_param,
             "estimator_": self.estimator_,
-            "fast": self.fast,
+            "shrinkage_scheme": self.shrinkage_scheme,
         }
         if deep:
             return deepcopy(params)
@@ -91,14 +93,13 @@ class SSTree:
         value = np.copy(tree.value)
 
         root = 0
-        root_left = tree.children_left[root]
-        root_right = tree.children_right[root]
-        if root_left == root_right == -1:
+        if self._is_leaf(tree, root):
             return
 
         stack = []
         root_samples = tree.n_node_samples[root]
-        root_feature = tree.feature[root]
+        root_left = tree.children_left[root]
+        root_right = tree.children_right[root]
         for node, sibling, sibling_on_right in (
             (root_left, root_right, True),
             (root_right, root_left, False),
@@ -107,13 +108,15 @@ class SSTree:
             node_weight = (root_samples**2 + node_samples * reg_param) / (
                 root_samples**2 + root_samples * reg_param
             )
-            sibling_list = [(sibling, sibling_on_right, 1 - node_weight, root_feature)]
-            stack.append((node, node_weight, sibling_list, 0))
+            parent_list = [root]
+            sibling_list = [(sibling, sibling_on_right, 1 - node_weight, root)]
+            stack.append((node, node_weight, parent_list, sibling_list, 0))
 
         while stack:
             (
                 node,
                 node_weight_multiplier,
+                parent_list,
                 sibling_list,
                 background,
             ) = stack.pop()
@@ -126,7 +129,6 @@ class SSTree:
 
                 continue
 
-            node_feature = tree.feature[node]
             node_left = tree.children_left[node]
             node_right = tree.children_right[node]
 
@@ -135,30 +137,54 @@ class SSTree:
                 (node_right, node_left, False),
             ):
                 spinoff = 0
+                child_parent_list = parent_list + [node]
                 child_sibling_list = []
                 for (
                     sibling,
                     sibling_on_right,
                     sibling_weight_multiplier,
-                    sibling_ancestor_feature,
+                    sibling_ancestor,
                 ) in sibling_list:
+
                     sibling_feature = tree.feature[sibling]
-                    if (
-                        self.fast
-                        or self._is_leaf(tree, sibling)
-                        or node_feature != sibling_feature != sibling_ancestor_feature
-                    ):
+                    sibling_ancestor_feature = tree.feature[sibling_ancestor]
+
+                    sibling_go_left = None
+                    if sibling_feature == sibling_ancestor_feature:
+                        sibling_go_left = sibling_on_right
+                    else:
+                        # TODO: sibling_feature only need to match a feature on the path leading to `node`
+                        child_lower, child_upper = -float('inf'), float('inf')
+                        last = child
+                        for parent in reversed(child_parent_list):
+                            if parent == sibling_ancestor:
+                                break
+                            parent_feature = tree.feature[parent]
+                            if parent_feature != sibling_feature:
+                                last = parent
+                                continue
+                            parent_threshold = tree.threshold[parent]
+                            if tree.children_left[parent] == last:
+                                child_upper = min(child_upper, parent_threshold)
+                            elif tree.children_right[parent] == last:
+                                child_lower = max(child_lower, parent_threshold)
+                            else:
+                                raise Exception("Unreachable")
+                            last = parent
+                        else:
+                            raise Exception("Unreachable")
+
+                        sibling_threshold = tree.threshold[sibling]
+                        if child_upper <= sibling_threshold:
+                            sibling_go_left = True
+                        elif child_lower > sibling_threshold:
+                            sibling_go_left = False
+
+                    if self.shrinkage_scheme == "coarse" or self._is_leaf(tree, sibling) or sibling_go_left is None:
                         spinoff += sibling_weight_multiplier * tree.value[sibling]
                         continue
 
-                    if sibling_feature == sibling_ancestor_feature:
-                        signal = sibling_on_right
-                    elif sibling_feature == node_feature:
-                        signal = child_sibling_on_right
-                    else:
-                        raise Exception("Unreachable")
-
-                    if signal:
+                    if sibling_go_left:
                         sibling_primary = tree.children_left[sibling]
                         sibling_secondary = tree.children_right[sibling]
                     else:
@@ -170,7 +196,7 @@ class SSTree:
                     sibling_primary_weight = (
                         sibling_samples**2 + sibling_primary_samples * reg_param
                     ) / (sibling_samples**2 + sibling_samples * reg_param)
-                    if self.fast:
+                    if self.shrinkage_scheme == "coarse":
                         spinoff += (
                             sibling_weight_multiplier
                             * sibling_primary_weight
@@ -187,7 +213,7 @@ class SSTree:
                                 sibling_primary,
                                 sibling_on_right,
                                 sibling_weight_multiplier * sibling_primary_weight,
-                                sibling_ancestor_feature,
+                                sibling_ancestor,
                             )
                         )
                         child_sibling_list.append(
@@ -196,7 +222,7 @@ class SSTree:
                                 sibling_on_right,
                                 sibling_weight_multiplier
                                 * (1 - sibling_primary_weight),
-                                sibling_ancestor_feature,
+                                sibling_ancestor,
                             )
                         )
 
@@ -204,7 +230,7 @@ class SSTree:
                 child_weight = (node_samples**2 + child_samples * reg_param) / (
                     node_samples**2 + node_samples * reg_param
                 )
-                if self.fast:
+                if self.shrinkage_scheme == "coarse":
                     spinoff += (
                         node_weight_multiplier
                         * (1 - child_weight)
@@ -217,7 +243,7 @@ class SSTree:
                             child_sibling,
                             child_sibling_on_right,
                             node_weight_multiplier * (1 - child_weight),
-                            node_feature,
+                            node,
                         )
                     )
 
@@ -225,6 +251,7 @@ class SSTree:
                     (
                         child,
                         node_weight_multiplier * child_weight,
+                        child_parent_list,
                         child_sibling_list,
                         background + spinoff,
                     )
@@ -316,7 +343,7 @@ class SSTreeClassifierCV(SSTreeClassifier):
         self,
         estimator_: Optional[BaseEstimator] = None,
         reg_param_list: Sequence[float] = (0.1, 1, 10, 50, 100, 500),
-        fast: str = "node_based",
+        shrinkage_scheme: Union[Literal["coarse"], Literal["fine"]] = "coarse",
         max_leaf_nodes: int = 20,
         cv: int = 3,
         scoring=None,
@@ -343,7 +370,7 @@ class SSTreeClassifierCV(SSTreeClassifier):
         self.reg_param_list = np.array(reg_param_list)
         self.cv = cv
         self.scoring = scoring
-        self.fast = fast
+        self.shrinkage_scheme = shrinkage_scheme
         # print('estimator', self.estimator_,
         #       'check_is_fitted(estimator)', check_is_fitted(self.estimator_))
         # if check_is_fitted(self.estimator_):
@@ -365,7 +392,7 @@ class SSTreeRegressorCV(SSTreeRegressor):
         self,
         estimator_: Optional[BaseEstimator] = None,
         reg_param_list: Sequence[float] = (0.1, 1, 10, 50, 100, 500),
-        fast: str = "node_based",
+        shrinkage_scheme: Union[Literal["coarse"], Literal["fine"]] = "coarse",
         max_leaf_nodes: int = 20,
         cv: int = 3,
         scoring=None,
@@ -392,7 +419,7 @@ class SSTreeRegressorCV(SSTreeRegressor):
         self.reg_param_list = np.array(reg_param_list)
         self.cv = cv
         self.scoring = scoring
-        self.fast = fast
+        self.shrinkage_scheme = shrinkage_scheme
         # print('estimator', self.estimator_,
         #       'check_is_fitted(estimator)', check_is_fitted(self.estimator_))
         # if check_is_fitted(self.estimator_):
@@ -439,7 +466,7 @@ if __name__ == "__main__":
     # m = (estimator_=DecisionTreeClassifier(random_state=42, max_features=None), reg_param=0)
     m = SSTreeClassifierCV(
         estimator_=DecisionTreeRegressor(max_leaf_nodes=10, random_state=1),
-        fast="node_based",
+        shrinkage_scheme="coarse",
         reg_param_list=[0.1, 1, 2, 5, 10, 25, 50, 100, 500],
     )
     # m = ShrunkTreeCV(estimator_=DecisionTreeClassifier())

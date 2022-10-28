@@ -17,7 +17,7 @@ plot_colors = "ryb"
 plot_step = 0.02
 
 
-def plot_boundary(reg_param, fast):
+def plot_boundary(reg_param, shrinkage_scheme):
     for pairidx, pair in enumerate([[0, 1], [0, 2], [0, 3], [1, 2], [1, 3], [2, 3]]):
         # We only take the two corresponding features
         X = iris.data[:, pair]
@@ -25,7 +25,7 @@ def plot_boundary(reg_param, fast):
 
         # Train
         clf = DecisionTreeClassifier().fit(X, y)
-        clf = SSTreeClassifier(deepcopy(clf), reg_param=reg_param, fast=fast)
+        clf = SSTreeClassifier(deepcopy(clf), reg_param=reg_param, shrinkage_scheme=shrinkage_scheme)
 
         # Plot the decision boundary
         ax = plt.subplot(2, 3, pairidx + 1)
@@ -59,10 +59,10 @@ def plot_boundary(reg_param, fast):
 
 reg_param = 50
 
-plot_boundary(reg_param, True)
-plt.savefig("figs/iris_fast.pdf")
+plot_boundary(reg_param, "coarse")
+plt.savefig("figs/iris_coarse.pdf")
 plt.close()
 
-plot_boundary(reg_param, False)
-plt.savefig("figs/iris_slow.pdf")
+plot_boundary(reg_param, "fine")
+plt.savefig("figs/iris_fine.pdf")
 plt.close()
