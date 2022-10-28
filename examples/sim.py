@@ -54,7 +54,9 @@ def plot_sim(n, std, linear_data, reg_param, shrinkage_scheme):
     m1.fit(X.reshape(-1, 1), y)
     y_pred_dt = m1.predict(X_tile.reshape(-1, 1))
 
-    mshrunk = SSTreeRegressor(deepcopy(m1), reg_param=reg_param, shrinkage_scheme=shrinkage_scheme)
+    mshrunk = SSTreeRegressor(
+        deepcopy(m1), reg_param=reg_param, shrinkage_scheme=shrinkage_scheme
+    )
     y_pred_shrunk = mshrunk.predict(X_tile.reshape(-1, 1))
 
     plt.plot(X, y, "o", color="black", ms=4, alpha=0.5, markeredgewidth=0)

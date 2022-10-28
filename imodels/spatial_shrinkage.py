@@ -154,7 +154,7 @@ class SSTree:
                         sibling_go_left = sibling_on_right
                     else:
                         # TODO: sibling_feature only need to match a feature on the path leading to `node`
-                        child_lower, child_upper = -float('inf'), float('inf')
+                        child_lower, child_upper = -float("inf"), float("inf")
                         last = child
                         for parent in reversed(child_parent_list):
                             if parent == sibling_ancestor:
@@ -180,7 +180,11 @@ class SSTree:
                         elif child_lower > sibling_threshold:
                             sibling_go_left = False
 
-                    if self.shrinkage_scheme == "coarse" or self._is_leaf(tree, sibling) or sibling_go_left is None:
+                    if (
+                        self.shrinkage_scheme == "coarse"
+                        or self._is_leaf(tree, sibling)
+                        or sibling_go_left is None
+                    ):
                         spinoff += sibling_weight_multiplier * tree.value[sibling]
                         continue
 

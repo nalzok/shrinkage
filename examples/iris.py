@@ -25,7 +25,9 @@ def plot_boundary(reg_param, shrinkage_scheme):
 
         # Train
         clf = DecisionTreeClassifier().fit(X, y)
-        clf = SSTreeClassifier(deepcopy(clf), reg_param=reg_param, shrinkage_scheme=shrinkage_scheme)
+        clf = SSTreeClassifier(
+            deepcopy(clf), reg_param=reg_param, shrinkage_scheme=shrinkage_scheme
+        )
 
         # Plot the decision boundary
         ax = plt.subplot(2, 3, pairidx + 1)
